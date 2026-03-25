@@ -1,8 +1,8 @@
 from pyspark import pipelines as dp
 from pyspark.sql.functions import col, current_timestamp
 
-# Define the base volume path (your raw landing zone)
-BASE_PATH = "/Volumes/primeins/landing/raw_data/autoinsurancedata"
+# Define the base volume path (your raw data zone)
+BASE_PATH = "/Volumes/primeins/bronze/raw_data/autoinsurancedata"
 
 # =============================================================================
 # ENTITY 1: CUSTOMERS
