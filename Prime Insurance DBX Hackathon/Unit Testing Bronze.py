@@ -9,7 +9,6 @@
 
 # COMMAND ----------
 
-# COMMAND ----------
 # ---------------------------------------------------------
 # STEP 3: Verification — Confirm all 5 Bronze tables exist and record counts
 # ---------------------------------------------------------
