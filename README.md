@@ -9,7 +9,7 @@ This project delivers a **Trust-Aware, AI-Native Data Product** built entirely o
 
 
 ## 🏗️ End-to-End Data Flow Architecture
-![PrimeInsurance Architecture](https://github.com/vibhorv4c/v4c-lakeflow-legends-primeins/blob/5e4dcb311c93956d224edab66d0fed3eba87535e/Prime%20Insurance%20DBX%20Hackathon/Reference%20Notebooks/Data%20Flow%20Architecture.drawio.png) *(Note: Add your exported Draw.io diagram to the repo and link it here)*
+![PrimeInsurance Architecture](https://github.com/vibhorv4c/v4c-lakeflow-legends-primeins/blob/5e4dcb311c93956d224edab66d0fed3eba87535e/Prime%20Insurance%20DBX%20Hackathon/Reference%20Notebooks/Data%20Flow%20Architecture.drawio.png) 
 
 1. **Bronze (Raw Ingestion):** Ingests 14 raw files (7 Customer CSVs, 2 Claim JSONs, 3 Sales CSVs, Policy & Car CSVs) from 6 regional systems using Unity Catalog Volumes with schema inference and incremental loading.
 2. **Silver (Cleansing & DQ Gatekeeper):** * Applies structural transformations (fixing data types, handling nulls) and Entity Resolution.
@@ -20,7 +20,7 @@ This project delivers a **Trust-Aware, AI-Native Data Product** built entirely o
    * **Aggregated Views:** `claim_performance`, `customer_metrics`, and `unsold_inventory`.
 4. **Serving & Consumption:**
    * **Dashboards:** Dedicated UIs for Inventory Management and Compliance DQ.
-   * **Views:** `v_aging_inventory`, `v_alert_scored`, `v_regional_demand_signal`.
+   * **Databricks Alert**
 
 ## 🧠 GenAI & LLM Integration (The "Wow" Factor)
 Our architecture goes beyond standard data engineering by embedding AI directly into the data workflow:
