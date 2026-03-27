@@ -1,0 +1,1905 @@
+{
+  "datasets": [
+    {
+      "name": "dataset_aging",
+      "displayName": "v_aging_inventory",
+      "queryLines": [
+        "SELECT * FROM primeins.gold.v_aging_inventory"
+      ]
+    },
+    {
+      "name": "dataset_scored",
+      "displayName": "v_alert_scored",
+      "queryLines": [
+        "SELECT sales_id, stuck_region, state, city, car_name, model, fuel, days_on_market, aging_tier, original_selling_price, at_risk_revenue, risk_score, demand_region, demand_median_days, recommended_action, priority_rank FROM primeins.gold.v_alert_scored"
+      ]
+    },
+    {
+      "name": "dataset_summary",
+      "displayName": "v_alert_summary",
+      "queryLines": [
+        "SELECT * FROM primeins.gold.v_alert_summary"
+      ]
+    },
+    {
+      "name": "dataset_kpi",
+      "displayName": "kpi_unsold_summary",
+      "queryLines": [
+        "SELECT COUNT(*) AS total_unsold_cars, COUNT(CASE WHEN aging_tier = 'CRITICAL' THEN 1 END) AS critical_cars, COUNT(CASE WHEN aging_tier = 'HIGH' THEN 1 END) AS high_cars, COUNT(CASE WHEN aging_tier = 'WATCH' THEN 1 END) AS watch_cars, ROUND(SUM(at_risk_revenue), 0) AS total_at_risk_revenue FROM primeins.gold.v_aging_inventory"
+      ]
+    },
+    {
+      "name": "dataset_redistribution",
+      "displayName": "redistribution_summary",
+      "queryLines": [
+        "WITH ranked AS (SELECT stuck_region, aging_tier, sales_id, at_risk_revenue, demand_region, demand_median_days, ROW_NUMBER() OVER (PARTITION BY stuck_region, aging_tier ORDER BY demand_median_days ASC) AS rn FROM primeins.gold.v_alert_scored WHERE aging_tier IN ('CRITICAL', 'HIGH') AND demand_region IS NOT NULL) SELECT stuck_region, aging_tier, COUNT(DISTINCT sales_id) AS unsold_cars, ROUND(SUM(DISTINCT at_risk_revenue), 0) AS at_risk_revenue, COUNT(DISTINCT sales_id) AS redistributable_cars, ROUND(SUM(DISTINCT at_risk_revenue), 0) AS recoverable_revenue, MAX(CASE WHEN rn = 1 THEN CONCAT(demand_region, ' (~', CAST(demand_median_days AS INT), ' days)') END) AS best_destination FROM ranked GROUP BY stuck_region, aging_tier ORDER BY aging_tier, at_risk_revenue DESC"
+      ]
+    },
+    {
+      "name": "dataset_model_breakdown",
+      "displayName": "unsold_by_model",
+      "queryLines": [
+        "SELECT model, fuel, COUNT(*) AS unsold_cars, ROUND(SUM(at_risk_revenue), 0) AS total_at_risk_revenue, ROUND(AVG(days_on_market), 1) AS avg_days_on_market FROM primeins.gold.v_aging_inventory WHERE aging_tier IN ('CRITICAL', 'HIGH') GROUP BY model, fuel ORDER BY total_at_risk_revenue DESC LIMIT 15"
+      ]
+    },
+    {
+      "name": "dataset_aging_distribution",
+      "displayName": "aging_distribution",
+      "queryLines": [
+        "SELECT aging_tier, COUNT(*) AS car_count, ROUND(SUM(at_risk_revenue), 0) AS revenue_at_risk FROM primeins.gold.v_aging_inventory GROUP BY aging_tier ORDER BY CASE aging_tier WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'WATCH' THEN 3 ELSE 4 END"
+      ]
+    },
+    {
+      "name": "dataset_recoverable_kpi",
+      "displayName": "recoverable_kpi",
+      "queryLines": [
+        "SELECT COUNT(DISTINCT sales_id) AS redistributable_cars, ROUND(SUM(DISTINCT at_risk_revenue), 0) AS recoverable_revenue FROM primeins.gold.v_alert_scored WHERE demand_region IS NOT NULL AND aging_tier IN ('CRITICAL', 'HIGH')"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "page_overview",
+      "displayName": "Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "text_page_header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# PrimeIns — Unsold Inventory Intelligence\n",
+                "**Source:** `primeins.gold`  &nbsp;|&nbsp;  **Refreshed:** Daily at 08:00  &nbsp;|&nbsp;  **Owner:** PrimeIns Data Team\n",
+                "\n",
+                "This dashboard tracks unsold car inventory across all regions. It identifies cars aging past safe thresholds, quantifies revenue at risk from forced discounts, and surfaces redistribution opportunities to recover that revenue before the discount window closes.\n",
+                "\n",
+                "**Aging tiers:** &nbsp; **CRITICAL** = 90+ days — act immediately &nbsp;|&nbsp; **HIGH** = 60–90 days — plan this week &nbsp;|&nbsp; **WATCH** = 30–60 days — monitor"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "label_total_unsold",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Total Unsold Cars\n",
+                "All cars currently unsold across every region and tier"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_total_unsold",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_kpi",
+                  "fields": [
+                    {
+                      "name": "total_unsold_cars",
+                      "expression": "`total_unsold_cars`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_unsold_cars",
+                  "displayName": "cars"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "label_critical",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Critical — 90+ Days\n",
+                "Past the discount window. Redistribute or markdown immediately"
+              ]
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 4,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_critical",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_kpi",
+                  "fields": [
+                    {
+                      "name": "critical_cars",
+                      "expression": "`critical_cars`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "critical_cars",
+                  "displayName": "cars"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 6,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "label_revenue_risk",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Revenue at Risk (₹)\n",
+                "Estimated 15% markdown loss if all unsold cars are force-discounted"
+              ]
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 4,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_revenue_risk",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_kpi",
+                  "fields": [
+                    {
+                      "name": "total_at_risk_revenue",
+                      "expression": "`total_at_risk_revenue`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_at_risk_revenue",
+                  "displayName": "₹"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 6,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "label_high_risk",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### High Risk — 60–90 Days\n",
+                "Plan redistribution this week before crossing the 90-day threshold"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_high",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_kpi",
+                  "fields": [
+                    {
+                      "name": "high_cars",
+                      "expression": "`high_cars`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "high_cars",
+                  "displayName": "cars"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "label_watch",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Watch — 30–60 Days\n",
+                "Monitor weekly. Not urgent yet but trending toward risk"
+              ]
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 8,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_watch",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_kpi",
+                  "fields": [
+                    {
+                      "name": "watch_cars",
+                      "expression": "`watch_cars`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "watch_cars",
+                  "displayName": "cars"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 10,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "label_recoverable",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Recoverable Revenue (₹)\n",
+                "Revenue saveable by redistributing cars before forced discounting"
+              ]
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 8,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_recoverable",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_recoverable_kpi",
+                  "fields": [
+                    {
+                      "name": "recoverable_revenue",
+                      "expression": "`recoverable_revenue`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "recoverable_revenue",
+                  "displayName": "₹"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 10,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "text_charts_intro",
+            "multilineTextboxSpec": {
+              "lines": [
+                "---\n",
+                "## Inventory Breakdown by Region and Tier\n",
+                "The charts below show how unsold cars and revenue risk are distributed across regions. Use these to identify which regions need the most urgent attention."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "pie_aging_distribution",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_aging_distribution",
+                  "fields": [
+                    {
+                      "name": "aging_tier",
+                      "expression": "`aging_tier`"
+                    },
+                    {
+                      "name": "car_count",
+                      "expression": "`car_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "car_count",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Cars"
+                },
+                "color": {
+                  "fieldName": "aging_tier",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Aging Tier"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 2,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_cars_by_region",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_summary",
+                  "fields": [
+                    {
+                      "name": "stuck_region",
+                      "expression": "`stuck_region`"
+                    },
+                    {
+                      "name": "aging_tier",
+                      "expression": "`aging_tier`"
+                    },
+                    {
+                      "name": "cars_at_risk",
+                      "expression": "`cars_at_risk`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "stuck_region",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Region"
+                },
+                "y": {
+                  "fieldName": "cars_at_risk",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Unsold Cars"
+                },
+                "color": {
+                  "fieldName": "aging_tier",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Aging Tier"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 14,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_revenue_by_region",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_summary",
+                  "fields": [
+                    {
+                      "name": "stuck_region",
+                      "expression": "`stuck_region`"
+                    },
+                    {
+                      "name": "aging_tier",
+                      "expression": "`aging_tier`"
+                    },
+                    {
+                      "name": "total_at_risk_revenue",
+                      "expression": "`total_at_risk_revenue`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "stuck_region",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Region"
+                },
+                "y": {
+                  "fieldName": "total_at_risk_revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Revenue at Risk (₹)"
+                },
+                "color": {
+                  "fieldName": "aging_tier",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Aging Tier"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 20,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_avg_days_by_region",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_aging",
+                  "fields": [
+                    {
+                      "name": "region",
+                      "expression": "`region`"
+                    },
+                    {
+                      "name": "days_on_market",
+                      "expression": "`days_on_market`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "region",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Region"
+                },
+                "y": {
+                  "fieldName": "days_on_market",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Avg Days on Market"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 20,
+            "width": 3,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "name": "page_redistribution",
+      "displayName": "Redistribution",
+      "layout": [
+        {
+          "widget": {
+            "name": "text_reco_header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Redistribution Opportunities\n",
+                "An unsold car in one region is not necessarily unsellable — it may simply be in the wrong place. This page identifies cars stuck in one region with **proven demand** in another, based on how fast the same model and fuel type sold there in the last 90 days.\n",
+                "\n",
+                "**Best Destination** = the region where that model sold fastest (lowest median days to sell). Moving cars there before the 90-day window closes avoids forced discounting and recovers revenue that would otherwise be written off.\n",
+                "\n",
+                "> Focus on **CRITICAL** rows first — these are past the 90-day threshold."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "label_recoverable_rev",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Recoverable Revenue (₹)\n",
+                "Revenue saveable by moving cars to a higher-demand region before forced markdown"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_recoverable_revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_recoverable_kpi",
+                  "fields": [
+                    {
+                      "name": "recoverable_revenue",
+                      "expression": "`recoverable_revenue`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "recoverable_revenue",
+                  "displayName": "₹"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "label_cars_moveable",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Cars That Can Be Moved\n",
+                "Unsold cars with at least one matching demand region identified — prioritise these first"
+              ]
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 4,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_redistributable_cars",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_recoverable_kpi",
+                  "fields": [
+                    {
+                      "name": "redistributable_cars",
+                      "expression": "`redistributable_cars`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "redistributable_cars",
+                  "displayName": "cars"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 6,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "label_regions_needing_action",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Regions Needing Action\n",
+                "Distinct regions with CRITICAL or HIGH cars that have a viable redistribution destination"
+              ]
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 4,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_regions_affected",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_redistribution",
+                  "fields": [
+                    {
+                      "name": "stuck_region",
+                      "expression": "COUNT(DISTINCT `stuck_region`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "stuck_region",
+                  "displayName": "regions"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 6,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "text_reco_table_intro",
+            "multilineTextboxSpec": {
+              "lines": [
+                "---\n",
+                "## Action Table — Where to Move Each Region's Stock\n",
+                "Each row is one region. **Best Destination** shows the fastest-selling region for that region's model mix. Sort by **Revenue at Risk** descending to prioritise the highest-value moves first."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "table_redistribution",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_redistribution",
+                  "fields": [
+                    {
+                      "name": "stuck_region",
+                      "expression": "`stuck_region`"
+                    },
+                    {
+                      "name": "aging_tier",
+                      "expression": "`aging_tier`"
+                    },
+                    {
+                      "name": "unsold_cars",
+                      "expression": "`unsold_cars`"
+                    },
+                    {
+                      "name": "at_risk_revenue",
+                      "expression": "`at_risk_revenue`"
+                    },
+                    {
+                      "name": "redistributable_cars",
+                      "expression": "`redistributable_cars`"
+                    },
+                    {
+                      "name": "recoverable_revenue",
+                      "expression": "`recoverable_revenue`"
+                    },
+                    {
+                      "name": "best_destination",
+                      "expression": "`best_destination`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "invisibleColumns": [],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": false,
+              "withRowNumber": false,
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "stuck_region",
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100000,
+                    "title": "Region",
+                    "alignContent": "left",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "aging_tier",
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100001,
+                    "title": "Tier",
+                    "alignContent": "left",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "unsold_cars",
+                    "type": "integer",
+                    "displayAs": "number",
+                    "visible": true,
+                    "order": 100002,
+                    "title": "Unsold Cars",
+                    "alignContent": "right",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "at_risk_revenue",
+                    "type": "float",
+                    "displayAs": "number",
+                    "visible": true,
+                    "order": 100003,
+                    "title": "Revenue at Risk (₹)",
+                    "alignContent": "right",
+                    "numberFormat": "0,0",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "redistributable_cars",
+                    "type": "integer",
+                    "displayAs": "number",
+                    "visible": true,
+                    "order": 100004,
+                    "title": "Can Be Moved",
+                    "alignContent": "right",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "recoverable_revenue",
+                    "type": "float",
+                    "displayAs": "number",
+                    "visible": true,
+                    "order": 100005,
+                    "title": "Recoverable Revenue (₹)",
+                    "alignContent": "right",
+                    "numberFormat": "0,0",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "best_destination",
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100006,
+                    "title": "Best Destination",
+                    "alignContent": "left",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_recoverable_by_region",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_redistribution",
+                  "fields": [
+                    {
+                      "name": "stuck_region",
+                      "expression": "`stuck_region`"
+                    },
+                    {
+                      "name": "recoverable_revenue",
+                      "expression": "`recoverable_revenue`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "stuck_region",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Region"
+                },
+                "y": {
+                  "fieldName": "recoverable_revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Recoverable Revenue (₹)"
+                },
+                "color": {
+                  "fieldName": "stuck_region",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Region"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_cars_moveable_by_region",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_redistribution",
+                  "fields": [
+                    {
+                      "name": "stuck_region",
+                      "expression": "`stuck_region`"
+                    },
+                    {
+                      "name": "redistributable_cars",
+                      "expression": "`redistributable_cars`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "stuck_region",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Region"
+                },
+                "y": {
+                  "fieldName": "redistributable_cars",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Cars That Can Be Moved"
+                },
+                "color": {
+                  "fieldName": "stuck_region",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Region"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 16,
+            "width": 3,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "name": "page_car_detail",
+      "displayName": "Car Detail",
+      "layout": [
+        {
+          "widget": {
+            "name": "text_detail_header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Car-Level Detail\n",
+                "Every unsold car ranked by composite risk score. Use this page to drill into specific cars, identify which models are most at risk, and understand the fuel-type distribution of stuck inventory.\n",
+                "\n",
+                "**Risk Score** = 50% days aging + 30% selling price + 20% redistribution opportunity bonus. Sort by **Rank** ascending to see the most urgent cars first.\n",
+                "\n",
+                "**Move To** = best destination region for that car. If blank, no demand signal was found — a pricing review is recommended instead."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "label_model_chart",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Top Models by Revenue at Risk\n",
+                "Which car models are contributing most to the leakage problem. Brief the sourcing team on which models to avoid overstocking in slow regions"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "label_fuel_chart",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Avg Days on Market by Fuel Type\n",
+                "Whether certain fuel types are systematically slower to sell — may indicate a regional demand or pricing mismatch"
+              ]
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 4,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_top_models_at_risk",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_model_breakdown",
+                  "fields": [
+                    {
+                      "name": "model",
+                      "expression": "`model`"
+                    },
+                    {
+                      "name": "total_at_risk_revenue",
+                      "expression": "`total_at_risk_revenue`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "model",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Model"
+                },
+                "y": {
+                  "fieldName": "total_at_risk_revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Revenue at Risk (₹)"
+                },
+                "color": {
+                  "fieldName": "model",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Model"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_fuel_type_breakdown",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_aging",
+                  "fields": [
+                    {
+                      "name": "fuel",
+                      "expression": "`fuel`"
+                    },
+                    {
+                      "name": "days_on_market",
+                      "expression": "`days_on_market`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "fuel",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Fuel Type"
+                },
+                "y": {
+                  "fieldName": "days_on_market",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Avg Days on Market"
+                },
+                "color": {
+                  "fieldName": "fuel",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Fuel Type"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 6,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "text_car_table_intro",
+            "multilineTextboxSpec": {
+              "lines": [
+                "---\n",
+                "## Full Car-Level Risk Register\n",
+                "Every unsold car with its risk score, recommended action, and destination region. **Note:** one car may appear multiple times if it matches demand in more than one region — each row is a separate redistribution option. Use the **Rank** column to identify the single best action per car."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "table_car_detail",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dataset_scored",
+                  "fields": [
+                    {
+                      "name": "priority_rank",
+                      "expression": "`priority_rank`"
+                    },
+                    {
+                      "name": "aging_tier",
+                      "expression": "`aging_tier`"
+                    },
+                    {
+                      "name": "stuck_region",
+                      "expression": "`stuck_region`"
+                    },
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "city",
+                      "expression": "`city`"
+                    },
+                    {
+                      "name": "car_name",
+                      "expression": "`car_name`"
+                    },
+                    {
+                      "name": "model",
+                      "expression": "`model`"
+                    },
+                    {
+                      "name": "fuel",
+                      "expression": "`fuel`"
+                    },
+                    {
+                      "name": "days_on_market",
+                      "expression": "`days_on_market`"
+                    },
+                    {
+                      "name": "original_selling_price",
+                      "expression": "`original_selling_price`"
+                    },
+                    {
+                      "name": "at_risk_revenue",
+                      "expression": "`at_risk_revenue`"
+                    },
+                    {
+                      "name": "risk_score",
+                      "expression": "`risk_score`"
+                    },
+                    {
+                      "name": "demand_region",
+                      "expression": "`demand_region`"
+                    },
+                    {
+                      "name": "demand_median_days",
+                      "expression": "`demand_median_days`"
+                    },
+                    {
+                      "name": "recommended_action",
+                      "expression": "`recommended_action`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "invisibleColumns": [],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false,
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "priority_rank",
+                    "type": "integer",
+                    "displayAs": "number",
+                    "visible": true,
+                    "order": 100000,
+                    "title": "Rank",
+                    "alignContent": "right",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "aging_tier",
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100001,
+                    "title": "Tier",
+                    "alignContent": "left",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "stuck_region",
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100002,
+                    "title": "Region",
+                    "alignContent": "left",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "state",
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100003,
+                    "title": "State",
+                    "alignContent": "left",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "city",
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100004,
+                    "title": "City",
+                    "alignContent": "left",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "car_name",
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100005,
+                    "title": "Car",
+                    "alignContent": "left",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "model",
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100006,
+                    "title": "Model",
+                    "alignContent": "left",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "fuel",
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100007,
+                    "title": "Fuel",
+                    "alignContent": "left",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "days_on_market",
+                    "type": "integer",
+                    "displayAs": "number",
+                    "visible": true,
+                    "order": 100008,
+                    "title": "Days on Market",
+                    "alignContent": "right",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "original_selling_price",
+                    "type": "float",
+                    "displayAs": "number",
+                    "visible": true,
+                    "order": 100009,
+                    "title": "Price (₹)",
+                    "alignContent": "right",
+                    "numberFormat": "0,0",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "at_risk_revenue",
+                    "type": "float",
+                    "displayAs": "number",
+                    "visible": true,
+                    "order": 100010,
+                    "title": "At Risk (₹)",
+                    "alignContent": "right",
+                    "numberFormat": "0,0",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "risk_score",
+                    "type": "float",
+                    "displayAs": "number",
+                    "visible": true,
+                    "order": 100011,
+                    "title": "Risk Score",
+                    "alignContent": "right",
+                    "numberFormat": "0.0",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "demand_region",
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100012,
+                    "title": "Move To",
+                    "alignContent": "left",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "demand_median_days",
+                    "type": "float",
+                    "displayAs": "number",
+                    "visible": true,
+                    "order": 100013,
+                    "title": "Sells In (days)",
+                    "alignContent": "right",
+                    "numberFormat": "0.0",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  },
+                  {
+                    "fieldName": "recommended_action",
+                    "type": "string",
+                    "displayAs": "string",
+                    "visible": true,
+                    "order": 100014,
+                    "title": "Recommended Action",
+                    "alignContent": "left",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "allowSearch": false,
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 13,
+            "width": 6,
+            "height": 10
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
