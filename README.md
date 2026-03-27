@@ -1,4 +1,4 @@
-# 🛡️ PrimeInsurance AI-Powered Lakehouse & Command Center
+# 🛡️ Prime Insurance Lakehouse
 **Team:** V4C Lakeflow Legends | **Event:** Databricks Hackathon
 
 ## 📖 Project Overview
@@ -38,10 +38,10 @@ Based on development workflow, the repository is structured as follows:
 v4c-lakeflow-legends-primeins/
 │
 ├── Prime Insurance DBX Hackathon/      # Main Project Directory
-│   ├── 01_PrimeIns_DE_Pipeline/            # Bronze, Silver (DQ Rules), and Gold (Star Schema) pipelines
-│   ├── 02_Gen_AI_Intelligence_Layer/               # Policy RAG, CRITIC Anomaly Engine, and AI DQ Briefs
-│   ├── 03_Dashboards/      # SQL for Inventory/Compliance Dashboards & AI Business Insights
-│   └── 04_Reference_Notebooks/           # Webhooks and scripts for the Daily Slackbot Trigger
+│   ├── PrimeInsDEPipeline/            # Bronze, Silver (DQ Rules), and Gold (Star Schema) pipelines
+│   ├── Gen AI Intelligence Layer/               # Policy RAG, CRITIC Anomaly Engine, and AI DQ Briefs
+│   ├── Dashboards/      # SQL for Inventory/Compliance Dashboards & AI Business Insights
+│   └── ReferenceNotebooks/           # Webhooks and scripts for the Daily Slackbot Trigger
 │
 ├── .gitignore                          # Standard Git ignore configurations
 └── README.md                           # Project documentation (You are here)
