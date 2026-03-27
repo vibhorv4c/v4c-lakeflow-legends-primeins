@@ -34,7 +34,7 @@ print("=" * 60)
 import os
 
 # ⚠️ REPLACE with your actual catalog, schema, and volume names
-volume_path = "/Volumes/primeins/landing/raw_data/autoinsurancedata/"
+volume_path = "/Volumes/primeins/bronze/raw_data/autoinsurancedata/"
 
 all_files = []
 
