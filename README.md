@@ -38,7 +38,7 @@ Based on development workflow, the repository is structured as follows:
 v4c-lakeflow-legends-primeins/
 │
 ├── Prime Insurance DBX Hackathon/      # Main Project Directory
-│   ├── 01_DE_Pipeline/            # Bronze, Silver (DQ Rules), and Gold (Star Schema) pipelines
+│   ├── 01_DE_Pipeline/            # Bronze, Silver (DQ Rules), and Gold (Star Schema) pipelines inside tranformation sub folder. This is an SDP folder
 │   ├── 02_Gen_AI_Intelligence_Layer/               # Policy RAG, CRITIC Anomaly Engine, and AI DQ Briefs
 │   ├── 03_Dashboards/      # SQL for Inventory/Compliance Dashboards & AI Business Insights
 │   └── 04_Reference_Notebooks/           # Webhooks and scripts for the Daily Slackbot Trigger
