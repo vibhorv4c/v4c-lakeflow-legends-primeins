@@ -1,0 +1,290 @@
+{
+  "datasets": [
+    {
+      "name": "5c24ba72",
+      "displayName": "Detailed Compliance Log",
+      "queryLines": [
+        "SELECT \r\n",
+        "  initcap(table_name) AS `Entity`,\r\n",
+        "  column_name AS `Column`,\r\n",
+        "  issue_description AS `Issue Description`,\r\n",
+        "  severity AS `Severity`,\r\n",
+        "  affected_records AS `Affected Rows`,\r\n",
+        "  CONCAT(ROUND(affected_ratio * 100, 2), '%') AS `Impact Rate`,\r\n",
+        "  suggested_fix AS `Suggested Action`\r\n",
+        "FROM primeins.silver.dq_issues\r\n",
+        "ORDER BY \r\n",
+        "  CASE WHEN severity LIKE 'Error%' THEN 1 ELSE 2 END, \r\n",
+        "  affected_records DESC;"
+      ]
+    },
+    {
+      "name": "ac2cbb9e",
+      "displayName": "Severity by Entity",
+      "queryLines": [
+        "SELECT \r\n",
+        "  initcap(table_name) AS `Entity`, \r\n",
+        "  severity AS `Severity`, \r\n",
+        "  SUM(affected_records) AS `Total Records`\r\n",
+        "FROM primeins.silver.dq_issues\r\n",
+        "GROUP BY table_name, severity\r\n",
+        "ORDER BY `Total Records` DESC;"
+      ]
+    },
+    {
+      "name": "0fe4a9bd",
+      "displayName": "High-Level KPIs",
+      "queryLines": [
+        "SELECT \r\n",
+        "  SUM(CASE WHEN severity LIKE 'Error%' THEN affected_records ELSE 0 END) AS `Total Quarantined (Errors)`,\r\n",
+        "  SUM(CASE WHEN severity LIKE 'Warning%' THEN affected_records ELSE 0 END) AS `Total Warnings (Passed)`\r\n",
+        "FROM primeins.silver.dq_issues;"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "0bcaa1f7",
+      "displayName": "Dashboard",
+      "layout": [
+        {
+          "widget": {
+            "name": "quarantined-errors",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "0fe4a9bd",
+                  "fields": [
+                    {
+                      "name": "sum(Total Quarantined (Errors))",
+                      "expression": "SUM(`Total Quarantined (Errors)`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Number oF records Quarantined"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Total Quarantined (Errors))"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "no-of-records-passed-to-silver-with-warning",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "0fe4a9bd",
+                  "fields": [
+                    {
+                      "name": "sum(Total Warnings (Passed))",
+                      "expression": "SUM(`Total Warnings (Passed)`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "No. of records passed to silver with warning"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(Total Warnings (Passed))"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "affected-records",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ac2cbb9e",
+                  "fields": [
+                    {
+                      "name": "Severity",
+                      "expression": "`Severity`"
+                    },
+                    {
+                      "name": "Entity",
+                      "expression": "`Entity`"
+                    },
+                    {
+                      "name": "Total Records",
+                      "expression": "`Total Records`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Affected Records"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "Entity",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "Total Records",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "Severity",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "detailed-logs",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "5c24ba72",
+                  "fields": [
+                    {
+                      "name": "Entity",
+                      "expression": "`Entity`"
+                    },
+                    {
+                      "name": "Column",
+                      "expression": "`Column`"
+                    },
+                    {
+                      "name": "Issue Description",
+                      "expression": "`Issue Description`"
+                    },
+                    {
+                      "name": "Severity",
+                      "expression": "`Severity`"
+                    },
+                    {
+                      "name": "Affected Rows",
+                      "expression": "`Affected Rows`"
+                    },
+                    {
+                      "name": "Impact Rate",
+                      "expression": "`Impact Rate`"
+                    },
+                    {
+                      "name": "Suggested Action",
+                      "expression": "`Suggested Action`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Detailed Logs"
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "Entity"
+                  },
+                  {
+                    "fieldName": "Column"
+                  },
+                  {
+                    "fieldName": "Issue Description"
+                  },
+                  {
+                    "fieldName": "Severity"
+                  },
+                  {
+                    "fieldName": "Affected Rows"
+                  },
+                  {
+                    "fieldName": "Impact Rate"
+                  },
+                  {
+                    "fieldName": "Suggested Action"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "f468db74",
+      "displayName": "Global Filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
