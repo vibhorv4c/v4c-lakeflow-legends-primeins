@@ -43,7 +43,7 @@ def dim_car():
 def fact_claims():
     claims = spark.readStream.table("primeins.silver.silver_claims")
     
-    # 🌟 THE FIX: No LIVE prefix. Just use the exact 3-part name!
+    # THE FIX: No LIVE prefix. Just use the exact 3-part name!
     dim_pol = spark.read.table("primeins.gold.dim_policy")   
     dim_cust = spark.read.table("primeins.gold.dim_customer")
     
@@ -85,9 +85,9 @@ def fact_car_sales():
     
     joined = sales.join(
         dim_car,
-        (sales.car_id == dim_car.car_id) &
-        (sales.ad_placed_on >= dim_car.valid_from) &
-        (sales.ad_placed_on <= F.coalesce(dim_car.valid_to, F.to_timestamp(F.lit("9999-12-31")))),
+        (sales.car_id == dim_car.car_id) ,
+        #(sales.ad_placed_on >= dim_car.valid_from) &
+        #(sales.ad_placed_on <= F.coalesce(dim_car.valid_to, F.to_timestamp(F.lit("9999-12-31")))),
         "left"
     )
     

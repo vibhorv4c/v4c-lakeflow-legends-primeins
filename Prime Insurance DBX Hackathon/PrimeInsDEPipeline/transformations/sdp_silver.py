@@ -133,7 +133,7 @@ def customers_prepared():
         .withColumn("is_valid_r1", F.col("customer_id").isNotNull())
         .withColumn("is_valid_r2", F.col("region").isin(VALID_REGIONS))
     )
-
+#quarantine table
 @dp.table(name="primeins.silver.silver_customers_quarantine", table_properties={"quality":"silver_quarantine"})
 def silver_customers_quarantine():
     return (
@@ -148,6 +148,8 @@ def silver_customers_quarantine():
 @dp.expect("R3_valid_education", "education IS NULL OR education IN ('primary', 'secondary', 'tertiary')")
 @dp.expect("R4_positive_balance", "balance IS NULL OR balance >= 0")
 @dp.expect("R5_valid_marital", "marital IS NULL OR marital IN ('single', 'married', 'divorced')")
+
+#Clean stream and sliver table creation
 def customers_clean_stream():
     return (
         spark.readStream.table("customers_prepared")
@@ -213,7 +215,7 @@ def claims_prepared():
     df = df.withColumn("_is_corrupt_date", corrupt) # 🌟 THE FIX: Save the dynamic calculation to a temporary column
 
     # 🌟 2. Transform Dates to Timestamps safely
-    #df = parse_timestamps(df, date_cols)
+    df = parse_timestamps(df, date_cols)
 
     df = add_audit(df, "silver_claims")
 
@@ -314,7 +316,7 @@ def silver_sales_quarantine():
     )
 
 @dp.view(name="sales_clean_stream")
-@dp.expect("R5_valid_seller", "seller_type IS NULL OR lower(seller_type) IN ('individual', 'dealer')")
+@dp.expect("R5_valid_seller", "seller_type IS NULL OR lower(seller_type) IN ('individual', 'dealer','trustmark dealer')")
 def sales_clean_stream():
     return (
         spark.readStream.table("sales_prepared")
@@ -361,13 +363,13 @@ def cars_prepared():
 
     df = add_audit(df, "silver_cars")
     
-    has_n = "name" in df.columns
+    has_n = "car_id" in df.columns
     has_k = "km_driven" in df.columns
     has_y = "year_of_manufacture" in df.columns
     has_p = "selling_price" in df.columns
 
     return (df
-        .withColumn("is_valid_r1", F.col("name").isNotNull() if has_n else F.lit(False))
+        .withColumn("is_valid_r1", F.col("car_id").isNotNull() if has_n else F.lit(False))
         .withColumn("is_valid_r2", (F.col("km_driven").isNull() | (F.col("km_driven") <= KM_MAX)) if has_k else F.lit(False))
     )
 
@@ -377,7 +379,7 @@ def silver_cars_quarantine():
         spark.readStream.table("cars_prepared")
         .filter(~F.col("is_valid_r1") | ~F.col("is_valid_r2") )
         .withColumn("_reject_reason",
-            F.when(~F.col("is_valid_r1"), F.lit("R1: car primary key (name) is null"))
+            F.when(~F.col("is_valid_r1"), F.lit("R1: car primary key is null"))
              .otherwise(F.concat(F.lit("R2: km_driven exceeds "), F.lit(KM_MAX)))
         )     
     )
@@ -394,7 +396,7 @@ dp.create_streaming_table(name="primeins.silver.silver_cars", comment="SCD Type 
 dp.apply_changes(
     target="primeins.silver.silver_cars",
     source="cars_clean_stream",
-    keys=["name"], 
+    keys=["car_id"], 
     sequence_by="_silver_load_ts",
     stored_as_scd_type=2
 )
@@ -492,8 +494,7 @@ def silver_dq_issues():
     
     # 1. Create the static fixes/warnings with an explicit description
     static_rows = [
-        Row(table_name="customers", column_name="education", severity="Warning (Fix Applied)", affected_records=73, _reason="S5_terto_fix", issue_description="Automatically standardized 'terto' spelling to 'tertiary'"),
-        Row(table_name="sales", column_name="N/A", severity="Error (Missing File)", affected_records=0, _reason="missing_file_sales_3", issue_description="sales_3.csv file was missing from Bronze extraction zone")
+        Row(table_name="sales", column_name="N/A", severity="Warning (Missing File)", affected_records=0, _reason="missing_file_sales_3", issue_description="sales_3.csv file doesn't exist")
     ]
     static_df = spark.createDataFrame(static_rows)
     static_df = (static_df
@@ -502,15 +503,15 @@ def silver_dq_issues():
     )
 
     # 2. Helper for Quarantined Records
-    def get_quarantine_stats(dag_func_name, table_name):
+    # 2. Helper for Quarantined Records
+    def get_quarantine_stats(target_table, table_name):
         return (
-            spark.read.table(f"LIVE.{dag_func_name}") 
+            spark.read.table(target_table) 
             .groupBy("_reject_reason")
             .agg(F.count("*").cast(T.IntegerType()).alias("affected_records"))
             .withColumn("table_name", F.lit(table_name))
             .withColumn("severity", F.lit("Error (Quarantined)"))
             .withColumn("column_name", F.split(F.col("_reject_reason"), " ")[1])
-            # 🌟 THE FIX: Map the reject reason directly to the description
             .withColumn("issue_description", F.col("_reject_reason"))
             .withColumn("issue_id", F.md5(F.concat_ws("|", F.col("table_name"), F.col("_reject_reason"))))
             .select("issue_id", "table_name", "column_name", "issue_description", "severity", "affected_records")
@@ -553,11 +554,11 @@ def silver_dq_issues():
         )
 
     # 4. Gather Quarantines (Errors)
-    q_cust   = get_quarantine_stats("silver_customers_quarantine", "customers")
-    q_claims = get_quarantine_stats("silver_claims_quarantine", "claims")
-    q_sales  = get_quarantine_stats("silver_sales_quarantine", "sales")
-    q_cars   = get_quarantine_stats("silver_cars_quarantine", "cars")
-    q_policy = get_quarantine_stats("silver_policy_quarantine", "policy")
+    q_cust   = get_quarantine_stats("primeins.silver.silver_customers_quarantine", "customers")
+    q_claims = get_quarantine_stats("primeins.silver.silver_claims_quarantine", "claims")
+    q_sales  = get_quarantine_stats("primeins.silver.silver_sales_quarantine", "sales")
+    q_cars   = get_quarantine_stats("primeins.silver.silver_cars_quarantine", "cars")
+    q_policy = get_quarantine_stats("primeins.silver.silver_policy_quarantine", "policy")
     
     # 5. Gather Expectations (Warnings) - Added the descriptions to the tuples!
     w_cust = get_warning_stats("primeins.silver.silver_customers", "customers", [
