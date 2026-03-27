@@ -177,7 +177,7 @@ def claims_prepared():
     # Apply standardisation immediately
     df = unify_cased_columns(df)
     
-    # 🌟 OPTIMIZATION: Replaced the nested F.when loop with a highly efficient Map lookup
+    #  OPTIMIZATION: Replaced the nested F.when loop with a highly efficient Map lookup
     state_col = next((c for c in ["incident_state"] if c in df.columns), None)
     if state_col:
         # 1. Convert the Python STATE_MAP into a flat list of Spark literals: [lit("IL"), lit("Illinois"), ...]
@@ -207,14 +207,14 @@ def claims_prepared():
 
     date_cols = [c for c in ["incident_date","claim_logged_on","claim_processed_on"] if c in df.columns]
     
-    # 🌟 1. Detect String Corruption BEFORE Data Type Casting
+    #  1. Detect String Corruption BEFORE Data Type Casting
     corrupt = F.lit(False)
     for dc in date_cols:
         corrupt = corrupt | (F.col(dc).isNotNull() & F.col(dc).rlike(DATE_CORRUPT)) 
         
-    df = df.withColumn("_is_corrupt_date", corrupt) # 🌟 THE FIX: Save the dynamic calculation to a temporary column
+    df = df.withColumn("_is_corrupt_date", corrupt) #  THE FIX: Save the dynamic calculation to a temporary column
 
-    # 🌟 2. Transform Dates to Timestamps safely
+    #  2. Transform Dates to Timestamps safely
     df = parse_timestamps(df, date_cols)
 
     df = add_audit(df, "silver_claims")
@@ -234,20 +234,20 @@ def silver_claims_quarantine():
         spark.readStream.table("claims_prepared")
         .filter(~F.col("is_valid_r1") | ~F.col("is_valid_r2") )
         .withColumn("_reject_reason", 
-            # 🌟 Removed the R3 .otherwise condition since it's no longer quarantined
+            #  Removed the R3 .otherwise condition since it's no longer quarantined
             F.when(~F.col("is_valid_r1"), F.lit("R1: ClaimID is null"))
              .otherwise(F.lit("R2: PolicyID is null")))
     )
 
 @dp.view(name="claims_clean_stream")
-@dp.expect("R3_valid_dates", "_is_corrupt_date = False") # 🌟 THE NEW EXPECTATION
+@dp.expect("R3_valid_dates", "_is_corrupt_date = False") #  THE NEW EXPECTATION
 @dp.expect("R5_valid_incident_severity", "incident_severity IS NULL OR incident_severity IN ('Major Damage', 'Minor Damage', 'Trivial Damage')")
 #claims clean table
 def claims_clean_stream():
     return (
         spark.readStream.table("claims_prepared")
         .filter(F.col("is_valid_r1") & F.col("is_valid_r2"))
-        .drop("is_valid_r1", "is_valid_r2") # 🌟 Clean up the temporary column so it doesn't land in Silver
+        .drop("is_valid_r1", "is_valid_r2") #  Clean up the temporary column so it doesn't land in Silver
     )
 
 dp.create_streaming_table(name="primeins.silver.silver_claims", comment="SCD Type 2 Claims Table")
@@ -277,7 +277,7 @@ def sales_prepared():
     ]) > 0
     df = df.filter(not_blank)
 
-    # 🌟 Transform Sales Dates using the robust parsing helper
+    #  Transform Sales Dates using the robust parsing helper
     df = parse_timestamps(df, ["ad_placed_on", "sold_on"])
 
     # S3 — Flag unsold inventory
@@ -411,7 +411,7 @@ def policy_prepared():
     # Apply standardisation immediately (You can safely uncomment this now!)
     df = unify_cased_columns(df)
 
-    # 🌟 OPTIMIZATION: Replaced the nested F.when loop with a highly efficient Map lookup
+    #  OPTIMIZATION: Replaced the nested F.when loop with a highly efficient Map lookup
     state_col = next((c for c in ["policy_state", "state"] if c in df.columns), None)
     if state_col:
         # 1. Convert the Python STATE_MAP into a flat list of Spark literals: [lit("IL"), lit("Illinois"), ...]
@@ -494,63 +494,95 @@ def silver_dq_issues():
     
     # 1. Create the static fixes/warnings with an explicit description
     static_rows = [
-        Row(table_name="sales", column_name="N/A", severity="Warning (Missing File)", affected_records=0, _reason="missing_file_sales_3", issue_description="sales_3.csv file doesn't exist")
+        Row(
+            table_name="sales", 
+            column_name="N/A", 
+            rule_name="missing_file_sales_3",
+            issue_description="sales_3.csv file doesn't exist", 
+            severity="Warning (Missing File)", 
+            affected_records=0,
+            affected_ratio=0.0,
+            suggested_fix="Check Bronze extraction zone for missing payload"
+        )
     ]
     static_df = spark.createDataFrame(static_rows)
     static_df = (static_df
-        .withColumn("issue_id", F.md5(F.concat_ws("|", F.col("table_name"), F.col("_reason"))))
-        .select("issue_id", "table_name", "column_name", "issue_description", "severity", "affected_records")
+        .withColumn("issue_id", F.md5(F.concat_ws("|", F.col("table_name"), F.col("rule_name"))))
+        .select("issue_id", "table_name", "column_name", "rule_name", "issue_description", "severity", "affected_records", "affected_ratio", "suggested_fix")
     )
 
     # 2. Helper for Quarantined Records
-    # 2. Helper for Quarantined Records
     def get_quarantine_stats(target_table, table_name):
-        return (
-            spark.read.table(target_table) 
-            .groupBy("_reject_reason")
-            .agg(F.count("*").cast(T.IntegerType()).alias("affected_records"))
-            .withColumn("table_name", F.lit(table_name))
-            .withColumn("severity", F.lit("Error (Quarantined)"))
-            .withColumn("column_name", F.split(F.col("_reject_reason"), " ")[1])
-            .withColumn("issue_description", F.col("_reject_reason"))
-            .withColumn("issue_id", F.md5(F.concat_ws("|", F.col("table_name"), F.col("_reject_reason"))))
-            .select("issue_id", "table_name", "column_name", "issue_description", "severity", "affected_records")
-        )
+        try:
+            q_df = spark.read.table(target_table)
+            c_df = spark.read.table(f"primeins.silver.silver_{table_name}")
+            
+            #  THE FIX: Calculate totals dynamically inside Spark SQL!
+            totals_df = q_df.agg(F.count("*").alias("q_total")) \
+                            .crossJoin(c_df.agg(F.count("*").alias("c_total"))) \
+                            .withColumn("total_records", F.col("q_total") + F.col("c_total"))
+            
+            grouped_q = q_df.groupBy("_reject_reason").agg(F.count("*").alias("affected_records"))
+            
+            return (
+                grouped_q.crossJoin(totals_df) # Appends the total_records column to every row
+                .withColumn("table_name", F.lit(table_name))
+                .withColumn("severity", F.lit("Error (Quarantined)"))
+                .withColumn("column_name", F.split(F.col("_reject_reason"), " ")[1])
+                .withColumn("issue_description", F.col("_reject_reason"))
+                .withColumn("rule_name", F.split(F.col("_reject_reason"), ":")[0]) 
+                .withColumn("issue_id", F.md5(F.concat_ws("|", F.col("table_name"), F.col("_reject_reason"))))
+                # Protect against divide-by-zero, calculate perfect ratio
+                .withColumn("affected_ratio", F.round(F.col("affected_records") / F.when(F.col("total_records") == 0, 1).otherwise(F.col("total_records")), 4))
+                .withColumn("suggested_fix",
+                    F.when(F.col("column_name").contains("id"), F.lit("Map missing primary keys from source system"))
+                     .when(F.col("_reject_reason").contains("null"), F.lit("Enforce NOT NULL constraints upstream"))
+                     .when(F.col("_reject_reason").contains("exceeds"), F.lit("Validate outlier thresholds with business"))
+                     .otherwise(F.lit("Review source system data entry rules"))
+                )
+                .select("issue_id", "table_name", "column_name", "rule_name", "issue_description", "severity", "affected_records", "affected_ratio", "suggested_fix")
+            )
+        except Exception:
+            return None
 
-    # 3. Helper for Expectation Violations (Now accepts descriptions in the rules list!)
+    # 3. Helper for Expectation Violations
     def get_warning_stats(target_table, table_name, rules):
-        # rules format: (rule_name, column_name, inverse_fail_condition, description)
         if not rules: return None
-        
         try:
             df = spark.read.table(target_table)
         except Exception:
             return None
         
-        # Build the dynamic description map
         desc_map_args = []
-        for r_name, _, _, desc in rules:
+        fix_map_args = []
+        for r_name, _, _, desc, fix in rules:
             desc_map_args.extend([F.lit(r_name), F.lit(desc)])
-        spark_desc_map = F.create_map(*desc_map_args)
+            fix_map_args.extend([F.lit(r_name), F.lit(fix)])
 
-        aggs = []
-        for rule_name, col_name, fail_cond, _ in rules:
+        spark_desc_map = F.create_map(*desc_map_args)
+        spark_fix_map = F.create_map(*fix_map_args)
+
+        #  THE FIX: Aggregate the total record count alongside the rule counts
+        aggs = [F.count("*").alias("_total_records")]
+        for rule_name, col_name, fail_cond, _, _ in rules:
             aggs.append(F.sum(F.expr(f"CASE WHEN {fail_cond} THEN 1 ELSE 0 END")).alias(rule_name))
         
         agg_df = df.agg(*aggs)
         
-        stack_args = ", ".join([f"'{rule_name}', '{col_name}', {rule_name}" for rule_name, col_name, _, _ in rules])
-        stack_expr = f"stack({len(rules)}, {stack_args}) as (_reason, column_name, affected_records)"
+        stack_args = ", ".join([f"'{rule_name}', '{col_name}', {rule_name}" for rule_name, col_name, _, _, _ in rules])
+        stack_expr = f"stack({len(rules)}, {stack_args}) as (rule_name, column_name, affected_records)"
         
-        unpivoted = agg_df.selectExpr(stack_expr).filter("affected_records > 0")
+        #  Keep _total_records during the unpivot process
+        unpivoted = agg_df.selectExpr("_total_records", stack_expr).filter("affected_records > 0")
         
         return (unpivoted
             .withColumn("table_name", F.lit(table_name))
             .withColumn("severity", F.lit("Warning (Passed to Silver)"))
-            # 🌟 THE FIX: Dynamically attach the human-readable description!
-            .withColumn("issue_description", spark_desc_map.getItem(F.col("_reason")))
-            .withColumn("issue_id", F.md5(F.concat_ws("|", F.col("table_name"), F.col("_reason"))))
-            .select("issue_id", "table_name", "column_name", "issue_description", "severity", "affected_records")
+            .withColumn("issue_description", spark_desc_map.getItem(F.col("rule_name")))
+            .withColumn("suggested_fix", spark_fix_map.getItem(F.col("rule_name"))) 
+            .withColumn("issue_id", F.md5(F.concat_ws("|", F.col("table_name"), F.col("rule_name"))))
+            .withColumn("affected_ratio", F.round(F.col("affected_records") / F.when(F.col("_total_records") == 0, 1).otherwise(F.col("_total_records")), 4))
+            .select("issue_id", "table_name", "column_name", "rule_name", "issue_description", "severity", "affected_records", "affected_ratio", "suggested_fix")
         )
 
     # 4. Gather Quarantines (Errors)
@@ -560,32 +592,31 @@ def silver_dq_issues():
     q_cars   = get_quarantine_stats("primeins.silver.silver_cars_quarantine", "cars")
     q_policy = get_quarantine_stats("primeins.silver.silver_policy_quarantine", "policy")
     
-    # 5. Gather Expectations (Warnings) - Added the descriptions to the tuples!
+    # 5. Gather Expectations (Warnings)
     w_cust = get_warning_stats("primeins.silver.silver_customers", "customers", [
-        ("R3_valid_education", "education", "education IS NOT NULL AND education NOT IN ('primary', 'secondary', 'tertiary')", "Customer education tier is unknown/invalid"),
-        ("R4_positive_balance", "balance", "balance IS NOT NULL AND balance < 0", "Customer account balance is negative"),
-        ("R5_valid_marital", "marital", "marital IS NOT NULL AND marital NOT IN ('single', 'married', 'divorced')", "Customer marital status is unknown/invalid")
+        ("R3_valid_education", "education", "education IS NOT NULL AND education NOT IN ('primary', 'secondary', 'tertiary')", "Customer education tier is unknown/invalid", "Map unknown values to default 'Unknown' in ETL"),
+        ("R4_positive_balance", "balance", "balance IS NOT NULL AND balance < 0", "Customer account balance is negative", "Investigate negative transactions in core financial sub-system"),
+        ("R5_valid_marital", "marital", "marital IS NOT NULL AND marital NOT IN ('single', 'married', 'divorced')", "Customer marital status is unknown/invalid", "Enforce strict dropdown selection in source CRM")
     ])
     
     w_claims = get_warning_stats("primeins.silver.silver_claims", "claims", [
-        ("R5_valid_incident_severity", "incident_severity", "incident_severity IS NOT NULL AND incident_severity NOT IN ('Major Damage', 'Minor Damage', 'Trivial Damage')", "Claim severity category is not recognized"),
-        ("R3_valid_dates", "multiple_date_columns", "_is_corrupt_date = True", "One or more date columns contain Excel serial fragments")
+        ("R5_valid_incident_severity", "incident_severity", "incident_severity IS NOT NULL AND incident_severity NOT IN ('Major Damage', 'Minor Damage', 'Trivial Damage')", "Claim severity category is not recognized", "Update mapping dictionary if business added new severity tiers"),
+        ("R3_valid_dates", "multiple_date_columns", "_is_corrupt_date = True", "One or more date columns contain Excel serial fragments", "Stop regional teams from exporting dates with 'mm:ss.0' formatting")
     ])
 
     w_sales = get_warning_stats("primeins.silver.silver_sales", "sales", [
-        ("R5_valid_seller", "seller_type", "seller_type IS NOT NULL AND lower(seller_type) NOT IN ('individual', 'dealer')", "Seller type is not classified as individual or dealer")
+        ("R5_valid_seller", "seller_type", "seller_type IS NOT NULL AND lower(seller_type) NOT IN ('individual', 'dealer','trustmark dealer')", "Seller type is not classified as individual or dealer", "Standardize seller inputs to authorized values only")
     ])
 
     w_policy = get_warning_stats("primeins.silver.silver_policy", "policy", [
-        ("R4_umbrella_limit_zero_warn", "umbrella_limit", "_umbrella_limit_zero_flag = True", "Policy umbrella limit is exactly zero (Verify with business if intended)")
+        ("R4_umbrella_limit_zero_warn", "umbrella_limit", "_umbrella_limit_zero_flag = True", "Policy umbrella limit is exactly zero (Verify with business if intended)", "Confirm with Underwriting if $0 umbrella limits are active products")
     ])
 
     # 6. Union everything together
-    master_dq = static_df \
-        .union(q_cust).union(q_claims).union(q_sales).union(q_cars).union(q_policy)
+    master_dq = static_df
     
-    for w_df in [w_cust, w_claims, w_sales, w_policy]:
-        if w_df is not None:
-            master_dq = master_dq.union(w_df)
+    for df in [q_cust, q_claims, q_sales, q_cars, q_policy, w_cust, w_claims, w_sales, w_policy]:
+        if df is not None:
+            master_dq = master_dq.union(df)
 
     return master_dq.orderBy(F.desc("severity"), F.desc("affected_records"))
